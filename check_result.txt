@@ -1,0 +1,9 @@
+﻿Now let me output the code review results in the requested format.
+
+---
+
+```
+椤圭洰浠ｇ爜鏄惁婊℃剰: 涓嶆弧鎰?
+bug鎻忚堪:
+鑼冨洿/瀵硅薄: app/crud.py create_threshold_config鍑芥暟 (绗?08-439琛? 鍜?app/routers/thresholds.py create_threshold璺敱 (绗?1-59琛?銆傚垱寤洪槇鍊奸厤缃椂锛屽綋鍚屼竴璁惧涓嬪凡瀛樺湪鐩稿悓metric_name鐨勯厤缃紝鏁版嵁搴撶殑UNIQUE绾︽潫(device_id, metric_name)浼氬鑷磀b.flush()鎶涘嚭IntegrityError锛屼絾璇ュ紓甯告湭琚崟鑾枫€傝矾鐢卞眰鍙鐞嗕簡config涓篘one鐨勬儏鍐?璁惧涓嶅瓨鍦?锛孖ntegrityError浼氱洿鎺ヤ紶鎾负鏈鐞嗙殑500 Internal Server Error锛岃€岄潪杩斿洖鏈夋剰涔夌殑涓氬姟閿欒鍝嶅簲銆?鐜拌薄/璇佹嵁: 璋冪敤POST /api/v1/thresholds鍒涘缓閲嶅鐨刣evice_id+metric_name缁勫悎鏃讹紝杩斿洖500 Internal Server Error鑰岄潪400绾у埆鐨勪笟鍔￠敊璇俊鎭€?涓庨渶姹傜殑鍋忓樊: 浠ｇ爜鏈熸湜鍦ㄥ垱寤哄け璐ユ椂杩斿洖400鐘舵€佺爜鍜?Check for duplicate device_id + metric_name"鎻愮ず(璺敱绗?2-54琛?锛屼絾瀹為檯鍥營ntegrityError鏈鎹曡幏鑰屾棤娉曟墽琛屽埌璇ラ€昏緫锛屽厛鎶涘嚭浜?00閿欒銆?褰卞搷鑼冨洿: 褰卞搷闃堝€奸厤缃垱寤哄姛鑳斤紝褰撶敤鎴疯鍒涘缓閲嶅閰嶇疆鏃舵棤娉曡幏寰楁槑纭殑閿欒鎸囧紩銆?涓ラ噸绋嬪害: 閮ㄥ垎鍔熻兘寮傚父锛岃竟鐣屽満鏅棶棰樸€?
+鑼冨洿/瀵硅薄: app/database.py get_db()鍑芥暟 (绗?2-47琛?銆俛sync with AsyncSessionLocal() as session涓婁笅鏂囩鐞嗗櫒鍦ㄩ€€鍑烘椂浼氳嚜鍔ㄨ皟鐢╯ession.close()锛屼絾finally鍧椾腑鍙堟樉寮忚皟鐢ㄤ簡await session.close()锛屽鑷翠細璇濊閲嶅鍏抽棴銆?鐜拌薄/璇佹嵁: 铏界劧SQLAlchemy鐨凙syncSession.close()閫氬父鍏锋湁骞傜瓑鎬т笉浼氬穿婧冿紝浣嗗睘浜庝笉姝ｇ‘鐨勮祫婧愮鐞嗙敤娉曪紝鍙兘鍦ㄧ壒瀹氱増鏈腑浜х敓璀﹀憡鎴栧紓甯搞€?涓庨渶姹傜殑鍋忓樊: 浼氳瘽璧勬簮琚浣欏湴鍏抽棴浜嗕竴娆★紝涓嶇鍚圫QLAlchemy璧勬簮绠＄悊鐨勬爣鍑嗕娇鐢ㄦā寮忋€?褰卞搷鑼冨洿: 褰卞搷鎵€鏈夐€氳繃get_db()鑾峰彇浼氳瘽鐨凙PI绔偣锛屼富娴佺▼鍩烘湰涓嶅彈褰卞搷锛屼絾瀛樺湪娼滃湪鐨勪笉绋冲畾鍥犵礌銆?涓ラ噸绋嬪害: 杈圭晫鍦烘櫙闂銆?```

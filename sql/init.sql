@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS devices (
     is_active       BOOLEAN         DEFAULT TRUE,                       -- 设备是否激活
     registered_at   TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 注册时间
     last_seen_at    TIMESTAMP       DEFAULT NULL,                       -- 最后一次在线时间
+    status          VARCHAR(16)     NOT NULL DEFAULT 'online',          -- 设备在线状态 (online/fault/alarm/offline)
     created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 记录创建时间
     updated_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP  -- 记录更新时间
 );
@@ -31,6 +32,9 @@ CREATE INDEX IF NOT EXISTS idx_devices_device_type ON devices(device_type);
 -- 为 is_active 创建索引，支持按激活状态筛选
 CREATE INDEX IF NOT EXISTS idx_devices_is_active ON devices(is_active);
 
+-- 为 status 创建索引，支持按设备在线状态筛选
+CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
+
 -- -----------------------------------------------------------
 -- 2. 阈值配置表: 存储各设备的报警阈值配置
 -- -----------------------------------------------------------
@@ -42,6 +46,7 @@ CREATE TABLE IF NOT EXISTS threshold_configs (
     min_value       DOUBLE PRECISION DEFAULT NULL,                      -- 最小值阈值 (低于此值触发报警)
     max_value       DOUBLE PRECISION DEFAULT NULL,                      -- 最大值阈值 (高于此值触发报警)
     is_enabled      BOOLEAN         DEFAULT TRUE,                       -- 该阈值是否启用
+    consecutive_count INTEGER         DEFAULT 1,                          -- 连续N次超出阈值才触发报警 (防抖次数, 1=立即触发)
     created_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 配置创建时间
     updated_at      TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 配置更新时间
     -- 约束: 同一设备的同一指标只能有一条配置

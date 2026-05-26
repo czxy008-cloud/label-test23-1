@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import crud
 from app.database import get_db
+from app.redis import cache_device_status
 from app.schemas import (
     StatusListResponse,
     StatusQueryParams,
@@ -64,6 +65,14 @@ async def report_status(
     )
 
     await crud.update_device_last_seen(db, device)
+
+    await cache_device_status(
+        device_id=device.device_id,
+        status_data=request.status_data,
+        reported_at=status_record.reported_at.isoformat(),
+        status_id=status_record.id,
+        has_alert=status_record.has_alert,
+    )
 
     return StatusReportResponse(
         code=201,
@@ -127,7 +136,7 @@ async def query_status(
     "/{device_id}/latest",
     response_model=StatusResponse,
     summary="获取最新状态",
-    description="获取指定设备的最新状态记录",
+    description="获取指定设备的最新状态记录，优先从Redis缓存读取，未命中时回源数据库",
 )
 async def get_latest_status(
     device_id: str,
@@ -137,20 +146,16 @@ async def get_latest_status(
     获取设备最新状态
 
     - **device_id**: 设备ID
+
+    采用缓存优先策略: 先查 Redis 缓存，未命中再查询数据库并回填缓存。
     """
     device = await crud.get_device_by_id(db, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    params = StatusQueryParams(
-        device_id=device_id,
-        page=1,
-        page_size=1,
-    )
+    latest_status = await crud.get_latest_device_status_cached(db, device_id)
 
-    status_records, _ = await crud.query_device_status(db, params)
-
-    if not status_records:
+    if not latest_status:
         raise HTTPException(status_code=404, detail="No status records found")
 
-    return StatusResponse.from_orm(status_records[0])
+    return StatusResponse.from_orm(latest_status)

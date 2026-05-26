@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.redis import close_redis_connection
 from app.routers import alerts, devices, status, thresholds
 
 app = FastAPI(
@@ -54,7 +55,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时的清理操作"""
-    pass
+    await close_redis_connection()
 
 
 @app.get(

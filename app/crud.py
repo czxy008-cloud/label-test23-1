@@ -15,6 +15,12 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.models import Alert, Device, DeviceStatus, ThresholdConfig
+from app.redis import (
+    cache_device_status,
+    get_cached_device_status,
+    increment_exceed_count,
+    reset_exceed_count,
+)
 from app.schemas import (
     AlertQueryParams,
     AlertAcknowledgeRequest,
@@ -50,14 +56,22 @@ def generate_secret_key() -> str:
     return f"sk_{secrets.token_hex(settings.SECRET_KEY_LENGTH // 2)}"
 
 
-def check_thresholds(
+async def check_thresholds(
+    device_id: str,
     status_data: Dict[str, Any],
     threshold_configs: List[ThresholdConfig],
 ) -> List[Dict[str, Any]]:
     """
-    检查状态数据是否触发阈值报警
+    检查状态数据是否触发阈值报警 (含防抖逻辑)
+
+    对于每个启用的阈值配置:
+    1. 判断指标值是否超出 [min, max] 范围
+    2. 若超出，递增 Redis 中的连续超出计数 (带TTL窗口)
+    3. 若连续计数达到配置的 consecutive_count，才真正触发报警
+    4. 若恢复到正常范围，重置连续计数
 
     Args:
+        device_id: 设备ID (用于构建Redis计数键)
         status_data: 设备上报的状态数据
         threshold_configs: 阈值配置列表
 
@@ -90,21 +104,28 @@ def check_thresholds(
             alert_type = f"high_{metric_name}"
 
         if is_alert:
-            alerts.append(
-                {
-                    "alert_type": alert_type,
-                    "alert_level": "warning",
-                    "metric_name": metric_name,
-                    "metric_value": metric_value,
-                    "threshold_min": config.min_value,
-                    "threshold_max": config.max_value,
-                    "alert_message": (
-                        f"{metric_name} 值 {metric_value}{config.metric_unit or ''} "
-                        f"超出阈值范围 "
-                        f"[{config.min_value}, {config.max_value}]"
-                    ),
-                }
-            )
+            current_count = await increment_exceed_count(device_id, metric_name)
+            required_count = max(1, config.consecutive_count or 1)
+
+            if current_count >= required_count:
+                alerts.append(
+                    {
+                        "alert_type": alert_type,
+                        "alert_level": "warning",
+                        "metric_name": metric_name,
+                        "metric_value": metric_value,
+                        "threshold_min": config.min_value,
+                        "threshold_max": config.max_value,
+                        "alert_message": (
+                            f"{metric_name} 值 {metric_value}{config.metric_unit or ''} "
+                            f"超出阈值范围 "
+                            f"[{config.min_value}, {config.max_value}] "
+                            f"(连续{current_count}次超出)"
+                        ),
+                    }
+                )
+        else:
+            await reset_exceed_count(device_id, metric_name)
 
     return alerts
 
@@ -202,6 +223,23 @@ async def update_device_last_seen(db: AsyncSession, device: Device) -> None:
     await db.flush()
 
 
+async def mark_device_status(db: AsyncSession, device: Device, status: str) -> None:
+    """
+    更新设备在线状态 (如: online/fault/alarm/offline)
+
+    当检测到报警时自动标记为 "alarm"，当恢复正常时标记为 "online"。
+    状态变更会自动更新 last_seen_at 以反映最近活动时间。
+
+    Args:
+        db: 数据库会话
+        device: 设备对象
+        status: 新状态值 (online/fault/alarm/offline)
+    """
+    device.status = status
+    device.last_seen_at = datetime.utcnow()
+    await db.flush()
+
+
 async def list_devices(
     db: AsyncSession,
     page: int = 1,
@@ -258,6 +296,13 @@ async def report_device_status(
     """
     处理设备状态上报
 
+    包含以下步骤:
+    1. 查询设备的启用阈值配置
+    2. 调用带防抖的阈值检查函数 check_thresholds
+    3. 写入设备状态快照
+    4. 若触发报警，写入历史报警记录
+    5. 若触发报警，自动将设备状态标记为"alarm"
+
     Args:
         db: 数据库会话
         device: 设备对象
@@ -274,9 +319,13 @@ async def report_device_status(
             )
         )
     )
-    threshold_configs = threshold_result.scalars().all()
+    threshold_configs = list(threshold_result.scalars().all())
 
-    triggered_alerts = check_thresholds(request.status_data, threshold_configs)
+    triggered_alerts = await check_thresholds(
+        device_id=device.device_id,
+        status_data=request.status_data,
+        threshold_configs=threshold_configs,
+    )
 
     status_record = DeviceStatus(
         device_id=device.device_id,
@@ -302,6 +351,10 @@ async def report_device_status(
             )
             db.add(alert)
         await db.flush()
+
+        await mark_device_status(db, device, "alarm")
+    else:
+        await mark_device_status(db, device, "online")
 
     return status_record, triggered_alerts
 
@@ -377,6 +430,7 @@ async def create_threshold_config(
         min_value=request.min_value,
         max_value=request.max_value,
         is_enabled=request.is_enabled,
+        consecutive_count=request.consecutive_count,
     )
 
     db.add(config)
@@ -566,3 +620,58 @@ async def get_alert_by_id(
         select(Alert).where(Alert.id == alert_id)
     )
     return result.scalar_one_or_none()
+
+
+# ============================================================
+# Redis 缓存相关操作
+# ============================================================
+
+async def get_latest_device_status_cached(
+    db: AsyncSession,
+    device_id: str,
+) -> Optional[DeviceStatus]:
+    """
+    获取设备最新状态（先查缓存，未命中再回源数据库）
+
+    策略:
+    1. 优先从 Redis 缓存读取最新状态快照
+    2. 缓存未命中时查询数据库获取最新一条记录
+    3. 数据库命中后将结果回填到 Redis 缓存
+
+    Args:
+        db: 数据库会话
+        device_id: 设备ID
+
+    Returns:
+        Optional[DeviceStatus]: 最新状态记录或None
+    """
+    cached = await get_cached_device_status(device_id)
+    if cached is not None:
+        return DeviceStatus(
+            id=cached.get("status_id"),
+            device_id=cached["device_id"],
+            status_data=cached["status_data"],
+            has_alert=cached.get("has_alert", False),
+            reported_at=datetime.fromisoformat(cached["reported_at"]),
+            created_at=datetime.fromisoformat(cached["reported_at"]),
+        )
+
+    params = StatusQueryParams(
+        device_id=device_id,
+        page=1,
+        page_size=1,
+    )
+    status_records, _ = await query_device_status(db, params)
+
+    if status_records:
+        latest = status_records[0]
+        await cache_device_status(
+            device_id=device_id,
+            status_data=latest.status_data,
+            reported_at=latest.reported_at.isoformat(),
+            status_id=latest.id,
+            has_alert=latest.has_alert,
+        )
+        return latest
+
+    return None

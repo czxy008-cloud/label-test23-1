@@ -65,6 +65,7 @@ class DeviceResponse(BaseModel):
     is_active: bool
     registered_at: datetime
     last_seen_at: Optional[datetime] = None
+    status: str = "online"
     created_at: datetime
     updated_at: datetime
 
@@ -149,6 +150,12 @@ class ThresholdConfigRequest(BaseModel):
     min_value: Optional[float] = Field(default=None, description="最小值阈值")
     max_value: Optional[float] = Field(default=None, description="最大值阈值")
     is_enabled: bool = Field(default=True, description="是否启用")
+    consecutive_count: int = Field(
+        default=1,
+        ge=1,
+        le=100,
+        description="连续N次超出阈值才触发报警 (防抖次数, 1=立即触发)",
+    )
 
     @validator("max_value")
     @classmethod
@@ -166,6 +173,12 @@ class ThresholdConfigUpdateRequest(BaseModel):
     min_value: Optional[float] = Field(default=None, description="最小值阈值")
     max_value: Optional[float] = Field(default=None, description="最大值阈值")
     is_enabled: Optional[bool] = Field(default=None, description="是否启用")
+    consecutive_count: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="连续N次超出阈值才触发报警 (防抖次数, 1=立即触发)",
+    )
 
 
 class ThresholdConfigResponse(BaseModel):
@@ -177,6 +190,7 @@ class ThresholdConfigResponse(BaseModel):
     min_value: Optional[float] = None
     max_value: Optional[float] = None
     is_enabled: bool
+    consecutive_count: int = 1
     created_at: datetime
     updated_at: datetime
 

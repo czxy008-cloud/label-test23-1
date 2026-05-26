@@ -15,6 +15,7 @@ from sqlalchemy import (
     Double,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -43,6 +44,12 @@ class Device(Base):
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"), comment="注册时间"
     )
     last_seen_at = Column(DateTime, nullable=True, comment="最后在线时间")
+    status = Column(
+        String(16),
+        nullable=False,
+        server_default=text("'online'"),
+        comment="设备在线状态: online/fault/alarm/offline",
+    )
     created_at = Column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
@@ -61,6 +68,7 @@ class Device(Base):
         Index("idx_devices_device_id", "device_id"),
         Index("idx_devices_device_type", "device_type"),
         Index("idx_devices_is_active", "is_active"),
+        Index("idx_devices_status", "status"),
     )
 
 
@@ -81,6 +89,12 @@ class ThresholdConfig(Base):
     min_value = Column(Double, nullable=True, comment="最小值阈值")
     max_value = Column(Double, nullable=True, comment="最大值阈值")
     is_enabled = Column(Boolean, nullable=False, server_default=text("true"), comment="是否启用")
+    consecutive_count = Column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+        comment="连续N次超出阈值才触发报警 (防抖次数, 默认1即立即触发)",
+    )
     created_at = Column(
         DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"), comment="创建时间"
     )
